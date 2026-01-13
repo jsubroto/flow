@@ -1,7 +1,7 @@
 use std::{io, path::PathBuf, time::Duration};
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -21,11 +21,19 @@ mod store_fs;
 use app::{Action, App};
 
 fn help_text() -> &'static str {
-    "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  Enter detail  r refresh  Esc close/quit  q quit"
+    "h/l or ←/→ focus  j/k or ↑/↓ select  H/L or Shift+←/→ move  Enter detail  r refresh  Esc close/quit  q quit"
 }
 
-fn action_from_key(code: KeyCode) -> Option<Action> {
-    Some(match code {
+fn action_from_key(event: KeyEvent) -> Option<Action> {
+    if event.modifiers.contains(KeyModifiers::SHIFT) {
+        match event.code {
+            KeyCode::Left => return Some(Action::MoveLeft),
+            KeyCode::Right => return Some(Action::MoveRight),
+            _ => {}
+        }
+    }
+
+    Some(match event.code {
         KeyCode::Char('q') => Action::Quit,
         KeyCode::Esc => Action::CloseOrQuit,
 
@@ -111,7 +119,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, root: PathBuf) -> 
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press {
-                    if let Some(a) = action_from_key(k.code) {
+                    if let Some(a) = action_from_key(k) {
                         match a {
                             Action::MoveLeft => {
                                 if let Some((card, dst)) = app.optimistic_move(-1) {

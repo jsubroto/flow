@@ -15,7 +15,7 @@ This project is intentionally minimal and opinionated.
 ## Features
 - Keyboard-first Kanban board
 - Columns and cards loaded from disk (no hardcoded data)
-- One-keystroke transitions (`H` / `L`)
+- One-keystroke transitions (`H` / `L` or Shift+←/→)
 - Toggle issue description (`Enter`)
 - `hjkl` **and** arrow-key navigation
 - Clean, terminal-native visuals
@@ -78,7 +78,7 @@ This format is:
 ## Keybindings
 - `h` / `l` **or** `←` / `→` — focus column
 - `j` / `k` **or** `↑` / `↓` — select card
-- `H` / `L` — move card left / right
+- `H` / `L` or Shift+←/→ — move card left / right
 - `Enter` — toggle description
 - `r` — reload board from disk
 - `Esc` — close description / quit
