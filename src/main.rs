@@ -206,7 +206,7 @@ fn render(f: &mut Frame, app: &App) {
         help,
     );
 
-    if app.detail {
+    if app.detail_open {
         let Some(col) = app.board.columns.get(app.col) else {
             return;
         };
