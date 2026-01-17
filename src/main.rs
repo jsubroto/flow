@@ -1,7 +1,6 @@
 use std::{
     collections::VecDeque,
-    io,
-    panic,
+    io, panic,
     sync::mpsc::{self, Receiver, TryRecvError},
     thread,
     time::Duration,
@@ -99,6 +98,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     let mut move_rx: Option<Receiver<MoveOutcome>> = None;
     let mut move_queue: VecDeque<(String, String)> = VecDeque::new();
     const MAX_QUEUE_SIZE: usize = 64;
+    let mut quitting = false;
 
     loop {
         if let Some(rx) = move_rx.as_ref() {
@@ -106,10 +106,12 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                 Ok(Ok(Some(board))) => {
                     app.board = board;
                     app.clamp();
-                    app.banner =
-                        Some("Move failed: reloaded board (optimistic state corrected)".to_string());
+                    app.banner = Some(
+                        "Move failed: reloaded board (optimistic state corrected)".to_string(),
+                    );
                     move_queue.clear(); // Drop queued moves after a failure to avoid compounding errors.
                     move_rx = None;
+                    update_quit_banner(&mut app, quitting, &move_queue, move_rx.is_some());
                 }
                 Ok(Ok(None)) => {
                     move_rx = None;
@@ -119,18 +121,25 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                     } else {
                         app.banner = None;
                     }
+                    update_quit_banner(&mut app, quitting, &move_queue, move_rx.is_some());
                 }
                 Ok(Err(msg)) => {
                     app.banner = Some(format!("Move failed: {msg}"));
                     move_queue.clear();
                     move_rx = None;
+                    update_quit_banner(&mut app, quitting, &move_queue, move_rx.is_some());
                 }
                 Err(TryRecvError::Empty) => {}
                 Err(TryRecvError::Disconnected) => {
                     app.banner = Some("Move failed: worker disconnected".to_string());
                     move_rx = None;
+                    update_quit_banner(&mut app, quitting, &move_queue, move_rx.is_some());
                 }
             }
+        }
+
+        if quitting && move_rx.is_none() && move_queue.is_empty() {
+            return Ok(());
         }
 
         terminal.draw(|f| render(f, &app))?;
@@ -139,6 +148,12 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press {
                     if let Some(a) = action_from_key(k.code) {
+                        if quitting {
+                            if matches!(a, Action::MoveLeft | Action::MoveRight) {
+                                continue;
+                            }
+                        }
+
                         match a {
                             Action::MoveLeft => {
                                 if move_rx.is_some() {
@@ -176,18 +191,33 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                                     app.banner = Some("Moving...".to_string());
                                 }
                             }
-                            Action::Refresh => match provider.load_board() {
-                                Ok(b) => {
-                                    app.board = b;
-                                    app.col = 0;
-                                    app.row = 0;
-                                    app.banner = None;
+                            Action::Refresh => {
+                                if quitting {
+                                    continue;
                                 }
-                                Err(e) => app.banner = Some(format!("Refresh failed: {e}")),
-                            },
+                                match provider.load_board() {
+                                    Ok(b) => {
+                                        app.board = b;
+                                        app.col = 0;
+                                        app.row = 0;
+                                        app.banner = None;
+                                    }
+                                    Err(e) => app.banner = Some(format!("Refresh failed: {e}")),
+                                }
+                            }
                             _ => {
                                 if app.apply(a) {
-                                    break;
+                                    if move_rx.is_some() || !move_queue.is_empty() {
+                                        quitting = true;
+                                        update_quit_banner(
+                                            &mut app,
+                                            quitting,
+                                            &move_queue,
+                                            move_rx.is_some(),
+                                        );
+                                    } else {
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -198,6 +228,23 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     }
 
     Ok(())
+}
+
+fn update_quit_banner(
+    app: &mut App,
+    quitting: bool,
+    move_queue: &VecDeque<(String, String)>,
+    move_in_flight: bool,
+) {
+    if !quitting {
+        return;
+    }
+    let pending = move_queue.len() + if move_in_flight { 1 } else { 0 };
+    app.banner = if pending == 0 {
+        None
+    } else {
+        Some(format!("Finishing {pending} pending moves before quit..."))
+    };
 }
 
 fn spawn_move(card_id: String, dst: String) -> Receiver<Result<Option<model::Board>, String>> {
