@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io, path::PathBuf};
 
 use reqwest::blocking::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     model::{Board, Card, Column},
@@ -131,13 +131,12 @@ impl JiraProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().unwrap_or_default();
-            return Err(self.map_err(
-                "jira_board_config",
-                format!("status {status}: {body}"),
-            ));
+            return Err(self.map_err("jira_board_config", format!("status {status}: {body}")));
         }
 
-        let body = resp.text().map_err(|e| self.map_err("jira_board_config", e))?;
+        let body = resp
+            .text()
+            .map_err(|e| self.map_err("jira_board_config", e))?;
         let data: BoardConfigResponse =
             serde_json::from_str(&body).map_err(|e| self.map_err("jira_board_config", e))?;
 
@@ -153,11 +152,22 @@ impl Provider for JiraProvider {
             });
         }
 
-        let board_id = self.board_id.as_deref().ok_or_else(|| ProviderError::Parse {
-            msg: "jira misconfigured: missing JIRA_BOARD_ID".to_string(),
-        })?;
+        let board_id = self
+            .board_id
+            .as_deref()
+            .ok_or_else(|| ProviderError::Parse {
+                msg: "jira misconfigured: missing JIRA_BOARD_ID".to_string(),
+            })?;
         let cfg = self.board_config(board_id)?;
         let config_map = Some(board_config_map(&cfg));
+        let mut status_to_column = HashMap::new();
+        if let Some(map) = &config_map {
+            for (column, status_ids) in &map.column_to_status {
+                for id in status_ids {
+                    status_to_column.insert(id.clone(), column.clone());
+                }
+            }
+        }
         let jql = format!(
             "filter={} AND assignee = currentUser() AND sprint in openSprints()",
             cfg.filter.id
@@ -195,9 +205,9 @@ impl Provider for JiraProvider {
             let status_name = issue.fields.status.name;
             let status_id = issue.fields.status.id.clone();
 
-            let column_name = config_map
-                .as_ref()
-                .and_then(|m| m.status_to_column.get(&status_id).cloned())
+            let column_name = status_to_column
+                .get(&status_id)
+                .cloned()
                 .unwrap_or(status_name);
 
             if !columns.contains_key(&column_name) {
@@ -279,7 +289,7 @@ impl Provider for JiraProvider {
             .post(url)
             .basic_auth(&self.email, Some(&self.api_token))
             .json(&TransitionRequest {
-                transition: TransitionId { id: transition_id },
+                transition: IdOnly { id: transition_id },
             })
             .send()
             .map_err(|e| self.map_err("jira_transition", e))?;
@@ -329,13 +339,13 @@ struct Transition {
     to: Status,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Serialize)]
 struct TransitionRequest {
-    transition: TransitionId,
+    transition: IdOnly,
 }
 
-#[derive(serde::Serialize)]
-struct TransitionId {
+#[derive(Deserialize, Serialize)]
+struct IdOnly {
     id: String,
 }
 
@@ -359,12 +369,7 @@ struct ColumnConfig {
 #[derive(Deserialize)]
 struct BoardColumn {
     name: String,
-    statuses: Vec<BoardStatus>,
-}
-
-#[derive(Deserialize)]
-struct BoardStatus {
-    id: String,
+    statuses: Vec<IdOnly>,
 }
 
 #[derive(serde::Serialize)]
@@ -377,13 +382,11 @@ struct SearchRequest {
 
 struct BoardConfigMap {
     order: Vec<String>,
-    status_to_column: HashMap<String, String>,
     column_to_status: HashMap<String, Vec<String>>,
 }
 
 fn board_config_map(cfg: &BoardConfigResponse) -> BoardConfigMap {
     let mut order = Vec::new();
-    let mut status_to_column = HashMap::new();
     let mut column_to_status = HashMap::<String, Vec<String>>::new();
 
     for col in &cfg.column_config.columns {
@@ -395,13 +398,11 @@ fn board_config_map(cfg: &BoardConfigResponse) -> BoardConfigMap {
             if !entry.iter().any(|id| id == &status.id) {
                 entry.push(status.id.clone());
             }
-            status_to_column.insert(status.id.clone(), col.name.clone());
         }
     }
 
     BoardConfigMap {
         order,
-        status_to_column,
         column_to_status,
     }
 }
@@ -443,7 +444,6 @@ fn pick_transition_for_column<'a>(
     first_match
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -466,17 +466,17 @@ mod tests {
                 columns: vec![
                     BoardColumn {
                         name: "To Do".to_string(),
-                        statuses: vec![BoardStatus {
+                        statuses: vec![IdOnly {
                             id: "1".to_string(),
                         }],
                     },
                     BoardColumn {
                         name: "In Progress".to_string(),
                         statuses: vec![
-                            BoardStatus {
+                            IdOnly {
                                 id: "3".to_string(),
                             },
-                            BoardStatus {
+                            IdOnly {
                                 id: "4".to_string(),
                             },
                         ],
