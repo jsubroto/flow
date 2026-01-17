@@ -44,5 +44,8 @@ pub trait Provider {
 }
 
 pub fn from_env() -> Box<dyn Provider> {
-    Box::new(crate::provider_local::LocalProvider::from_env())
+    match std::env::var("FLOW_PROVIDER").ok().as_deref() {
+        Some("jira") => Box::new(crate::provider_jira::JiraProvider::from_env()),
+        _ => Box::new(crate::provider_local::LocalProvider::from_env()),
+    }
 }

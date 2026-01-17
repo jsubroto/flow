@@ -51,6 +51,25 @@ If you want to use the default local board path, set:
 FLOW_PROVIDER=local cargo run
 ```
 
+## Jira mode
+To load issues from Jira, set:
+
+```bash
+FLOW_PROVIDER=jira
+JIRA_BASE_URL=https://your-site.atlassian.net
+JIRA_EMAIL=you@example.com
+JIRA_API_TOKEN=your_token
+```
+
+Set board ID to load column order from Jira and infer the board's filter:
+
+```bash
+JIRA_BOARD_ID=123
+```
+
+Flow will only show issues assigned to the current user in open sprints.
+
+
 ## Board format
 Boards are plain files:
 

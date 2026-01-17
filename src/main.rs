@@ -17,6 +17,7 @@ use ratatui::{
 mod app;
 mod model;
 mod provider;
+mod provider_jira;
 mod provider_local;
 mod store_fs;
 
