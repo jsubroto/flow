@@ -141,45 +141,39 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                     if let Some(a) = action_from_key(k.code) {
                         match a {
                             Action::MoveLeft => {
-                                if let Some((card_id, dst)) = app.optimistic_move(-1) {
-                                    if move_rx.is_some() {
-                                        if move_queue.len() < MAX_QUEUE_SIZE {
-                                            move_queue.push_back((card_id, dst));
-                                            app.banner = Some(format!(
-                                                "Moving... ({} queued)",
-                                                move_queue.len()
-                                            ));
-                                        } else {
-                                            app.banner = Some(
-                                                "Move queue full — too many pending moves"
-                                                    .to_string(),
-                                            );
-                                        }
-                                    } else {
-                                        move_rx = Some(spawn_move(card_id, dst));
-                                        app.banner = Some("Moving...".to_string());
+                                if move_rx.is_some() {
+                                    if move_queue.len() >= MAX_QUEUE_SIZE {
+                                        app.banner = Some(
+                                            "Move queue full — too many pending moves".to_string(),
+                                        );
+                                    } else if let Some((card_id, dst)) = app.optimistic_move(-1) {
+                                        move_queue.push_back((card_id, dst));
+                                        app.banner = Some(format!(
+                                            "Moving... ({} queued)",
+                                            move_queue.len()
+                                        ));
                                     }
+                                } else if let Some((card_id, dst)) = app.optimistic_move(-1) {
+                                    move_rx = Some(spawn_move(card_id, dst));
+                                    app.banner = Some("Moving...".to_string());
                                 }
                             }
                             Action::MoveRight => {
-                                if let Some((card_id, dst)) = app.optimistic_move(1) {
-                                    if move_rx.is_some() {
-                                        if move_queue.len() < MAX_QUEUE_SIZE {
-                                            move_queue.push_back((card_id, dst));
-                                            app.banner = Some(format!(
-                                                "Moving... ({} queued)",
-                                                move_queue.len()
-                                            ));
-                                        } else {
-                                            app.banner = Some(
-                                                "Move queue full — too many pending moves"
-                                                    .to_string(),
-                                            );
-                                        }
-                                    } else {
-                                        move_rx = Some(spawn_move(card_id, dst));
-                                        app.banner = Some("Moving...".to_string());
+                                if move_rx.is_some() {
+                                    if move_queue.len() >= MAX_QUEUE_SIZE {
+                                        app.banner = Some(
+                                            "Move queue full — too many pending moves".to_string(),
+                                        );
+                                    } else if let Some((card_id, dst)) = app.optimistic_move(1) {
+                                        move_queue.push_back((card_id, dst));
+                                        app.banner = Some(format!(
+                                            "Moving... ({} queued)",
+                                            move_queue.len()
+                                        ));
                                     }
+                                } else if let Some((card_id, dst)) = app.optimistic_move(1) {
+                                    move_rx = Some(spawn_move(card_id, dst));
+                                    app.banner = Some("Moving...".to_string());
                                 }
                             }
                             Action::Refresh => match provider.load_board() {
