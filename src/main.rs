@@ -94,6 +94,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     };
 
     let mut app = App::new(board);
+    app.focus_first_non_empty();
     type MoveOutcome = Result<Option<model::Board>, String>;
     let mut move_rx: Option<Receiver<MoveOutcome>> = None;
     let mut move_queue: VecDeque<(String, String)> = VecDeque::new();
@@ -198,8 +199,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                                 match provider.load_board() {
                                     Ok(b) => {
                                         app.board = b;
-                                        app.col = 0;
-                                        app.row = 0;
+                                        app.focus_first_non_empty();
                                         app.banner = None;
                                     }
                                     Err(e) => app.banner = Some(format!("Refresh failed: {e}")),

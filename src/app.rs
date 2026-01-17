@@ -118,6 +118,10 @@ impl App {
         false
     }
 
+    pub fn focus_first_non_empty(&mut self) {
+        (self.col, self.row) = (first_non_empty_column(&self.board).unwrap_or(0), 0);
+    }
+
     pub fn optimistic_move(&mut self, dir: isize) -> Option<(String, String)> {
         if self.board.columns.is_empty() {
             return None;
@@ -142,6 +146,15 @@ impl App {
 
         Some((card_id, to_col_id))
     }
+}
+
+fn first_non_empty_column(board: &Board) -> Option<usize> {
+    for (i, col) in board.columns.iter().enumerate() {
+        if !col.cards.is_empty() {
+            return Some(i);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -180,12 +193,10 @@ mod tests {
     #[test]
     fn clamp_bounds_indices() {
         let mut app = App::new(board_two_cols());
-        app.col = 9;
-        app.row = 9;
+        (app.col, app.row) = (9, 9);
         app.clamp();
 
-        assert_eq!(app.col, 1);
-        assert_eq!(app.row, 0);
+        assert_eq!((app.col, app.row), (1, 0));
     }
 
     #[test]
@@ -209,8 +220,7 @@ mod tests {
         app.select(-10);
         assert_eq!(app.row, 0);
 
-        app.col = 1;
-        app.row = 9;
+        (app.col, app.row) = (1, 9);
         app.select(1);
         assert_eq!(app.row, 0);
     }
@@ -223,8 +233,7 @@ mod tests {
 
         assert_eq!(id, "1");
         assert_eq!(dst, "b");
-        assert_eq!(app.col, 1);
-        assert_eq!(app.row, 0);
+        assert_eq!((app.col, app.row), (1, 0));
         assert_eq!(app.board.columns[1].cards.len(), 1);
         assert_eq!(app.board.columns[1].cards[0].id, "1");
         assert_eq!(app.board.columns[0].cards.len(), 1);
@@ -243,17 +252,30 @@ mod tests {
         let mut app = App::new(Board { columns: vec![] });
 
         assert!(app.optimistic_move(1).is_none());
-        assert_eq!(app.col, 0);
-        assert_eq!(app.row, 0);
+        assert_eq!((app.col, app.row), (0, 0));
     }
 
     #[test]
     fn move_from_empty_column_is_none() {
         let mut app = App::new(board_two_cols());
-        app.col = 1;
-        app.row = 0;
+        (app.col, app.row) = (1, 0);
 
         assert!(app.optimistic_move(-1).is_none());
+    }
+
+    #[test]
+    fn focus_first_non_empty_picks_first_column_with_cards() {
+        let mut app = App::new(board_two_cols());
+
+        app.board.columns[0].cards.clear();
+        app.board.columns[1].cards.push(Card {
+            id: "2".to_string(),
+            title: "t2".to_string(),
+            description: "d".to_string(),
+        });
+        app.focus_first_non_empty();
+
+        assert_eq!((app.col, app.row), (1, 0));
     }
 
     #[test]
