@@ -215,10 +215,7 @@ impl Provider for JiraProvider {
                 order.push(column_name.clone());
             }
 
-            let desc = match issue.fields.description {
-                Some(serde_json::Value::String(s)) => s,
-                _ => String::new(),
-            };
+            let desc = jira_description_text(issue.fields.description.as_ref());
 
             columns.get_mut(&column_name).unwrap().push(Card {
                 id: issue.key,
@@ -444,6 +441,66 @@ fn pick_transition_for_column<'a>(
     first_match
 }
 
+fn jira_description_text(desc: Option<&serde_json::Value>) -> String {
+    let Some(desc) = desc else {
+        return String::new();
+    };
+
+    match desc {
+        serde_json::Value::String(s) => s.clone(),
+        _ => {
+            let mut out = String::new();
+            collect_rich_text(desc, &mut out);
+            out.lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    }
+}
+
+fn collect_rich_text(node: &serde_json::Value, out: &mut String) {
+    use serde_json::Value;
+
+    match node {
+        Value::Object(map) => {
+            let ty = map.get("type").and_then(Value::as_str);
+
+            if let Some(text) = map.get("text").and_then(Value::as_str) {
+                out.push_str(text);
+            }
+
+            if ty == Some("hardBreak") {
+                out.push('\n');
+            }
+
+            if let Some(Value::Array(content)) = map.get("content") {
+                for child in content {
+                    collect_rich_text(child, out);
+                }
+            }
+
+            if matches!(
+                ty,
+                Some("paragraph")
+                    | Some("heading")
+                    | Some("blockquote")
+                    | Some("listItem")
+                    | Some("codeBlock")
+            ) {
+                out.push('\n');
+            }
+        }
+        Value::Array(arr) => {
+            for child in arr {
+                collect_rich_text(child, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -517,5 +574,29 @@ mod tests {
         let t = pick_transition_for_column(&transitions, "To Do", &status_ids).unwrap();
 
         assert_eq!(t.to.name, "Open");
+    }
+
+    #[test]
+    fn jira_description_extracts_text() {
+        let desc = serde_json::json!({
+            "type": "doc",
+            "version": 1,
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [
+                        { "type": "text", "text": "Hello" }
+                    ]
+                },
+                {
+                    "type": "paragraph",
+                    "content": [
+                        { "type": "text", "text": "World" }
+                    ]
+                }
+            ]
+        });
+
+        assert_eq!(jira_description_text(Some(&desc)), "Hello\nWorld");
     }
 }
