@@ -41,6 +41,18 @@ impl std::error::Error for ProviderError {
 pub trait Provider {
     fn load_board(&mut self) -> Result<Board, ProviderError>;
     fn move_card(&mut self, card_id: &str, to_col_id: &str) -> Result<(), ProviderError>;
+
+    fn create_card(&mut self, _to_col_id: &str) -> Result<String, ProviderError> {
+        Err(ProviderError::Parse {
+            msg: "create_card not supported by current provider".to_string(),
+        })
+    }
+
+    fn card_path(&self, _card_id: &str) -> Result<PathBuf, ProviderError> {
+        Err(ProviderError::Parse {
+            msg: "edit_card not supported by current provider".to_string(),
+        })
+    }
 }
 
 pub fn from_env() -> Box<dyn Provider> {

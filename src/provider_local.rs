@@ -51,6 +51,27 @@ impl Provider for LocalProvider {
         store_fs::move_card(&self.root, card_id, to_col_id)
             .map_err(|e| map_move_err(card_id, &self.root, e))
     }
+
+    fn create_card(&mut self, to_col_id: &str) -> Result<String, ProviderError> {
+        store_fs::create_card(&self.root, to_col_id).map_err(|err| ProviderError::Io {
+            op: "create_card".to_string(),
+            path: self.root.clone(),
+            source: err,
+        })
+    }
+
+    fn card_path(&self, card_id: &str) -> Result<PathBuf, ProviderError> {
+        store_fs::card_path(&self.root, card_id).map_err(|err| match err.kind() {
+            io::ErrorKind::NotFound => ProviderError::NotFound {
+                id: card_id.to_string(),
+            },
+            _ => ProviderError::Io {
+                op: "card_path".to_string(),
+                path: self.root.clone(),
+                source: err,
+            },
+        })
+    }
 }
 
 fn map_load_err(op: &str, root: &Path, err: io::Error) -> ProviderError {

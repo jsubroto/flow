@@ -1,4 +1,8 @@
-use std::{fs, io, path::Path};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::model::{Board, Card, Column};
 
@@ -85,6 +89,29 @@ pub fn move_card(root: &Path, card_id: &str, to_col_id: &str) -> io::Result<()> 
     order_append(&dst_dir.join("order.txt"), card_id)?;
 
     Ok(())
+}
+
+pub fn create_card(root: &Path, to_col_id: &str) -> io::Result<String> {
+    let id = format!("CARD-{}", now_millis());
+    let dir = root.join("cols").join(to_col_id);
+    fs::create_dir_all(&dir)?;
+    fs::write(dir.join(format!("{id}.md")), "# New card\n\n")?;
+    order_append(&dir.join("order.txt"), &id)?;
+    Ok(id)
+}
+
+pub fn card_path(root: &Path, card_id: &str) -> io::Result<PathBuf> {
+    let col_ids = list_columns(root)?;
+    let src = find_card_column(root, &col_ids, card_id)?
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "card not found"))?;
+    Ok(root.join("cols").join(src).join(format!("{card_id}.md")))
+}
+
+fn now_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 fn list_columns(root: &Path) -> io::Result<Vec<String>> {
@@ -191,6 +218,25 @@ mod tests {
 
         let b2 = load_board(&root).unwrap();
         assert_eq!(b2.columns[1].cards.len(), 1);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn create_card_persists_file_and_order() {
+        let root = tmp_root();
+        write(&root.join("board.txt"), "col todo\n");
+
+        let id = create_card(&root, "todo").unwrap();
+        assert!(
+            root.join("cols")
+                .join("todo")
+                .join(format!("{id}.md"))
+                .exists()
+        );
+
+        let order = fs::read_to_string(root.join("cols/todo/order.txt")).unwrap();
+        assert!(order.lines().any(|l| l == id));
 
         fs::remove_dir_all(root).unwrap();
     }

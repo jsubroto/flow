@@ -1,6 +1,8 @@
 use std::{
     collections::VecDeque,
     io, panic,
+    path::Path,
+    process::Command,
     sync::mpsc::{self, Receiver, TryRecvError},
     thread,
     time::Duration,
@@ -30,7 +32,7 @@ mod store_fs;
 use app::{Action, App};
 
 fn help_text() -> &'static str {
-    "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  Enter detail  r refresh  Esc close/quit  q quit"
+    "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  n new  e edit  Enter detail  r refresh  Esc close/quit  q quit"
 }
 
 fn action_from_key(code: KeyCode) -> Option<Action> {
@@ -148,6 +150,52 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press {
+                    if matches!(k.code, KeyCode::Char('n')) {
+                        if quitting {
+                            continue;
+                        }
+                        let Some(col) = app.board.columns.get(app.col) else {
+                            app.banner = Some("Create failed: no column selected".to_string());
+                            continue;
+                        };
+                        let card_id = match provider.create_card(&col.id) {
+                            Ok(id) => id,
+                            Err(e) => {
+                                app.banner = Some(format!("Create failed: {e}"));
+                                continue;
+                            }
+                        };
+                        if let Err(msg) = edit_card_in_editor(
+                            terminal,
+                            provider.as_mut(),
+                            &mut app,
+                            card_id,
+                            "Create failed",
+                        ) {
+                            app.banner = Some(msg);
+                        }
+                        continue;
+                    }
+                    if matches!(k.code, KeyCode::Char('e')) {
+                        if quitting {
+                            continue;
+                        }
+                        let Some(card_id) = selected_card_id(&app) else {
+                            app.banner = Some("Edit failed: no card selected".to_string());
+                            continue;
+                        };
+                        if let Err(msg) = edit_card_in_editor(
+                            terminal,
+                            provider.as_mut(),
+                            &mut app,
+                            card_id,
+                            "Edit failed",
+                        ) {
+                            app.banner = Some(msg);
+                        }
+                        continue;
+                    }
+
                     if let Some(a) = action_from_key(k.code) {
                         if quitting {
                             if matches!(a, Action::MoveLeft | Action::MoveRight) {
@@ -228,6 +276,70 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     }
 
     Ok(())
+}
+
+fn selected_card_id(app: &App) -> Option<String> {
+    app.board
+        .columns
+        .get(app.col)
+        .and_then(|col| col.cards.get(app.row))
+        .map(|card| card.id.clone())
+}
+
+fn edit_card_in_editor(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    provider: &mut dyn provider::Provider,
+    app: &mut App,
+    card_id: String,
+    err_prefix: &str,
+) -> Result<(), String> {
+    let path = provider
+        .card_path(&card_id)
+        .map_err(|e| format!("{err_prefix}: {e}"))?;
+    open_in_editor(terminal, &path).map_err(|e| format!("Open editor failed: {e}"))?;
+
+    let board = provider
+        .load_board()
+        .map_err(|e| format!("Reload failed: {e}"))?;
+    app.board = board;
+    focus_card_by_id(app, &card_id);
+    app.banner = None;
+    Ok(())
+}
+
+fn focus_card_by_id(app: &mut App, card_id: &str) {
+    for (col_idx, col) in app.board.columns.iter().enumerate() {
+        if let Some(row_idx) = col.cards.iter().position(|c| c.id == card_id) {
+            app.col = col_idx;
+            app.row = row_idx;
+            app.clamp();
+            return;
+        }
+    }
+    app.focus_first_non_empty();
+}
+
+fn open_in_editor(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    path: &Path,
+) -> io::Result<()> {
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+    let status = Command::new(editor).arg(path).status();
+
+    execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+    enable_raw_mode()?;
+    terminal.clear()?;
+    terminal.show_cursor()?;
+
+    let status = status?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other("editor exited with non-zero status"))
+    }
 }
 
 fn update_quit_banner(
