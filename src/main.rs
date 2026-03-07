@@ -32,7 +32,7 @@ mod store_fs;
 use app::{Action, App};
 
 fn help_text() -> &'static str {
-    "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  n new  e edit  Enter detail  r refresh  Esc close/quit  q quit"
+    "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  n new  e edit  d delete  Enter detail  r refresh  Esc close/quit  q quit"
 }
 
 fn action_from_key(code: KeyCode) -> Option<Action> {
@@ -51,6 +51,7 @@ fn action_from_key(code: KeyCode) -> Option<Action> {
 
         KeyCode::Enter => Action::ToggleDetail,
         KeyCode::Char('r') => Action::Refresh,
+        KeyCode::Char('d') => Action::Delete,
 
         _ => return None,
     })
@@ -251,6 +252,26 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                                         app.banner = None;
                                     }
                                     Err(e) => app.banner = Some(format!("Refresh failed: {e}")),
+                                }
+                            }
+                            Action::Delete => {
+                                if quitting {
+                                    continue;
+                                }
+                                if let Some(card_id) = selected_card_id(&app) {
+                                    app.apply(a);
+                                    if let Err(e) = provider.delete_card(&card_id) {
+                                        app.banner = Some(format!("Delete failed: {e}"));
+                                        if let Ok(board) = provider.load_board() {
+                                            app.board = board;
+                                            app.clamp();
+                                        }
+                                    } else {
+                                        app.banner = Some("Card deleted".to_string());
+                                    }
+                                } else {
+                                    app.apply(a);
+                                    app.banner = Some("No card selected to delete".to_string());
                                 }
                             }
                             _ => {

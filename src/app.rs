@@ -12,6 +12,7 @@ pub enum Action {
     MoveRight,
     ToggleDetail,
     Refresh,
+    Delete,
 }
 
 pub struct App {
@@ -136,6 +137,7 @@ impl App {
             Action::SelectDown => self.select(1),
             Action::ToggleDetail => self.detail_open = !self.detail_open,
             Action::Refresh | Action::MoveLeft | Action::MoveRight => {}
+            Action::Delete => { self.delete_current_card(); },
         }
         false
     }
@@ -167,6 +169,23 @@ impl App {
         self.row = self.board.columns[dst].cards.len() - 1;
 
         Some((card_id, to_col_id))
+    }
+
+    pub fn delete_current_card(&mut self) -> Option<String> {
+        if self.board.columns.is_empty() {
+            return None;
+        }
+
+        self.clamp();
+
+        if self.board.columns[self.col].cards.is_empty() {
+            return None;
+        }
+
+        let card = self.board.columns[self.col].cards.remove(self.row);
+        self.clamp_row();
+
+        Some(card.id)
     }
 }
 
