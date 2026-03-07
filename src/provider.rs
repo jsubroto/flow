@@ -53,6 +53,12 @@ pub trait Provider {
             msg: "edit_card not supported by current provider".to_string(),
         })
     }
+
+    fn delete_card(&mut self, _card_id: &str) -> Result<(), ProviderError> {
+        Err(ProviderError::Parse {
+            msg: "delete_card not supported by current provider".to_string(),
+        })
+    }
 }
 
 pub fn from_env() -> Box<dyn Provider> {

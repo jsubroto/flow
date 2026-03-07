@@ -91,6 +91,18 @@ pub fn move_card(root: &Path, card_id: &str, to_col_id: &str) -> io::Result<()> 
     Ok(())
 }
 
+pub fn delete_card(root: &Path, card_id: &str) -> io::Result<()> {
+    let col_ids = list_columns(root)?;
+    let src = find_card_column(root, &col_ids, card_id)?
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "card not found"))?;
+
+    let dir = root.join("cols").join(&src);
+    fs::remove_file(dir.join(format!("{card_id}.md")))?;
+    order_remove(&dir.join("order.txt"), card_id)?;
+
+    Ok(())
+}
+
 pub fn create_card(root: &Path, to_col_id: &str) -> io::Result<String> {
     let id = format!("CARD-{}", now_millis());
     let dir = root.join("cols").join(to_col_id);
