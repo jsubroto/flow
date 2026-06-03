@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     model::Board,
-    provider::{Provider, ProviderError},
+    provider::{MoveMode, Provider, ProviderError},
     store_fs,
 };
 
@@ -50,6 +50,10 @@ impl Provider for LocalProvider {
     fn move_card(&mut self, card_id: &str, to_col_id: &str) -> Result<(), ProviderError> {
         store_fs::move_card(&self.root, card_id, to_col_id)
             .map_err(|e| map_move_err(card_id, &self.root, e))
+    }
+
+    fn move_mode(&self) -> MoveMode {
+        MoveMode::Sync
     }
 
     fn create_card(&mut self, to_col_id: &str) -> Result<String, ProviderError> {

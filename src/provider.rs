@@ -2,6 +2,12 @@ use std::{fmt, io, path::PathBuf};
 
 use crate::model::Board;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoveMode {
+    Sync,
+    Async,
+}
+
 #[derive(Debug)]
 pub enum ProviderError {
     NotFound {
@@ -41,6 +47,9 @@ impl std::error::Error for ProviderError {
 pub trait Provider {
     fn load_board(&mut self) -> Result<Board, ProviderError>;
     fn move_card(&mut self, card_id: &str, to_col_id: &str) -> Result<(), ProviderError>;
+    fn move_mode(&self) -> MoveMode {
+        MoveMode::Async
+    }
 
     fn create_card(&mut self, _to_col_id: &str) -> Result<String, ProviderError> {
         Err(ProviderError::Parse {

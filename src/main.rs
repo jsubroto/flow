@@ -73,6 +73,7 @@ fn main() -> io::Result<()> {
 
 fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> {
     let mut provider = provider::from_env();
+    let async_moves = matches!(provider.move_mode(), provider::MoveMode::Async);
 
     let board = match provider.load_board() {
         Ok(b) => b,
@@ -100,7 +101,6 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     type MoveOutcome = Result<Option<model::Board>, String>;
     let mut move_rx: Option<Receiver<MoveOutcome>> = None;
     let mut move_queue: VecDeque<(String, String)> = VecDeque::new();
-    const MAX_QUEUE_SIZE: usize = 64;
     let mut quitting = false;
 
     loop {
@@ -204,40 +204,12 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                         }
 
                         match a {
-                            Action::MoveLeft => {
-                                if move_rx.is_some() {
-                                    if move_queue.len() >= MAX_QUEUE_SIZE {
-                                        app.banner = Some(
-                                            "Move queue full — too many pending moves".to_string(),
-                                        );
-                                    } else if let Some((card_id, dst)) = app.optimistic_move(-1) {
-                                        move_queue.push_back((card_id, dst));
-                                        app.banner = Some(format!(
-                                            "Moving... ({} queued)",
-                                            move_queue.len()
-                                        ));
-                                    }
-                                } else if let Some((card_id, dst)) = app.optimistic_move(-1) {
-                                    move_rx = Some(spawn_move(card_id, dst));
-                                    app.banner = Some("Moving...".to_string());
-                                }
-                            }
-                            Action::MoveRight => {
-                                if move_rx.is_some() {
-                                    if move_queue.len() >= MAX_QUEUE_SIZE {
-                                        app.banner = Some(
-                                            "Move queue full — too many pending moves".to_string(),
-                                        );
-                                    } else if let Some((card_id, dst)) = app.optimistic_move(1) {
-                                        move_queue.push_back((card_id, dst));
-                                        app.banner = Some(format!(
-                                            "Moving... ({} queued)",
-                                            move_queue.len()
-                                        ));
-                                    }
-                                } else if let Some((card_id, dst)) = app.optimistic_move(1) {
-                                    move_rx = Some(spawn_move(card_id, dst));
-                                    app.banner = Some("Moving...".to_string());
+                            Action::MoveLeft | Action::MoveRight => {
+                                let dir = if a == Action::MoveLeft { -1 } else { 1 };
+                                if async_moves {
+                                    move_async(&mut app, &mut move_rx, &mut move_queue, dir);
+                                } else {
+                                    move_sync(provider.as_mut(), &mut app, dir);
                                 }
                             }
                             Action::Refresh => {
@@ -284,6 +256,46 @@ fn selected_card_id(app: &App) -> Option<String> {
         .get(app.col)
         .and_then(|col| col.cards.get(app.row))
         .map(|card| card.id.clone())
+}
+
+fn move_async(
+    app: &mut App,
+    move_rx: &mut Option<Receiver<Result<Option<model::Board>, String>>>,
+    move_queue: &mut VecDeque<(String, String)>,
+    dir: isize,
+) {
+    const MAX_QUEUE_SIZE: usize = 64;
+
+    if move_rx.is_some() {
+        if move_queue.len() >= MAX_QUEUE_SIZE {
+            app.banner = Some("Move queue full — too many pending moves".to_string());
+        } else if let Some((card_id, dst)) = app.optimistic_move(dir) {
+            move_queue.push_back((card_id, dst));
+            app.banner = Some(format!("Moving... ({} queued)", move_queue.len()));
+        }
+    } else if let Some((card_id, dst)) = app.optimistic_move(dir) {
+        *move_rx = Some(spawn_move(card_id, dst));
+        app.banner = Some("Moving...".to_string());
+    }
+}
+
+fn move_sync(provider: &mut dyn provider::Provider, app: &mut App, dir: isize) {
+    let Some((card_id, dst)) = app.optimistic_move(dir) else {
+        return;
+    };
+
+    match provider.move_card(&card_id, &dst) {
+        Ok(()) => app.banner = None,
+        Err(move_err) => match provider.load_board() {
+            Ok(board) => {
+                app.board = board;
+                app.clamp();
+                app.banner =
+                    Some("Move failed: reloaded board (optimistic state corrected)".to_string());
+            }
+            Err(_) => app.banner = Some(format!("Move failed: {move_err}")),
+        },
+    }
 }
 
 fn edit_card_in_editor(
