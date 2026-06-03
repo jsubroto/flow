@@ -73,7 +73,6 @@ fn main() -> io::Result<()> {
 
 fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> {
     let mut provider = provider::from_env();
-    let async_moves = matches!(provider.move_mode(), provider::MoveMode::Async);
 
     let board = match provider.load_board() {
         Ok(b) => b,
@@ -203,7 +202,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                 match a {
                     Action::MoveLeft | Action::MoveRight => {
                         let dir = if a == Action::MoveLeft { -1 } else { 1 };
-                        if async_moves {
+                        if matches!(provider.move_mode(), provider::MoveMode::Async) {
                             move_async(&mut app, &mut move_rx, &mut move_queue, dir);
                         } else {
                             move_sync(provider.as_mut(), &mut app, dir);
