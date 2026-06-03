@@ -91,7 +91,7 @@ impl JiraProvider {
         ProviderError::Io {
             op: op.to_string(),
             path: PathBuf::from(&self.base_url),
-            source: io::Error::new(io::ErrorKind::Other, err.to_string()),
+            source: io::Error::other(err.to_string()),
         }
     }
 
@@ -264,10 +264,10 @@ impl Provider for JiraProvider {
         if let Some(board_id) = &self.board_id {
             let cfg = self.board_config(board_id)?;
             let map = board_config_map(&cfg);
-            if let Some(status_ids) = map.column_to_status.get(to_col_id) {
-                if let Some(t) = pick_transition_for_column(&transitions, to_col_id, status_ids) {
-                    transition_id = Some(t.id.clone());
-                }
+            if let Some(status_ids) = map.column_to_status.get(to_col_id)
+                && let Some(t) = pick_transition_for_column(&transitions, to_col_id, status_ids)
+            {
+                transition_id = Some(t.id.clone());
             }
         }
         let transition_id = if let Some(id) = transition_id {
@@ -467,7 +467,9 @@ struct RichTextState {
 
 impl RichTextState {
     fn new() -> Self {
-        Self { at_line_start: true }
+        Self {
+            at_line_start: true,
+        }
     }
 
     fn push_text(&mut self, out: &mut String, text: &str) {
@@ -496,15 +498,14 @@ fn collect_rich_text(node: &serde_json::Value, out: &mut String, state: &mut Ric
                 state.push_newline(out);
             }
 
-            if ty == Some("inlineCard") {
-                if let Some(url) = map
+            if ty == Some("inlineCard")
+                && let Some(url) = map
                     .get("attrs")
                     .and_then(Value::as_object)
                     .and_then(|attrs| attrs.get("url"))
                     .and_then(Value::as_str)
-                {
-                    state.push_text(out, url);
-                }
+            {
+                state.push_text(out, url);
             }
 
             if ty == Some("listItem") {
@@ -670,10 +671,7 @@ mod tests {
             ]
         });
 
-        assert_eq!(
-            jira_description_text(Some(&desc)),
-            "- First\n- Second"
-        );
+        assert_eq!(jira_description_text(Some(&desc)), "- First\n- Second");
     }
 
     #[test]

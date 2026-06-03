@@ -82,14 +82,12 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
             app.banner = Some(format!("Load failed: {e}"));
             loop {
                 terminal.draw(|f| render(f, &app))?;
-                if event::poll(Duration::from_millis(50))? {
-                    if let Event::Key(k) = event::read()? {
-                        if k.kind == KeyEventKind::Press
-                            && matches!(k.code, KeyCode::Char('q') | KeyCode::Esc)
-                        {
-                            break;
-                        }
-                    }
+                if event::poll(Duration::from_millis(50))?
+                    && let Event::Key(k) = event::read()?
+                    && k.kind == KeyEventKind::Press
+                    && matches!(k.code, KeyCode::Char('q') | KeyCode::Esc)
+                {
+                    break;
                 }
             }
             return Ok(());
@@ -147,98 +145,95 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
 
         terminal.draw(|f| render(f, &app))?;
 
-        if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(k) = event::read()? {
-                if k.kind == KeyEventKind::Press {
-                    if matches!(k.code, KeyCode::Char('n')) {
-                        if quitting {
-                            continue;
-                        }
-                        let Some(col) = app.board.columns.get(app.col) else {
-                            app.banner = Some("Create failed: no column selected".to_string());
-                            continue;
-                        };
-                        let card_id = match provider.create_card(&col.id) {
-                            Ok(id) => id,
-                            Err(e) => {
-                                app.banner = Some(format!("Create failed: {e}"));
-                                continue;
-                            }
-                        };
-                        if let Err(msg) = edit_card_in_editor(
-                            terminal,
-                            provider.as_mut(),
-                            &mut app,
-                            card_id,
-                            "Create failed",
-                        ) {
-                            app.banner = Some(msg);
-                        }
+        if event::poll(Duration::from_millis(50))?
+            && let Event::Key(k) = event::read()?
+            && k.kind == KeyEventKind::Press
+        {
+            if matches!(k.code, KeyCode::Char('n')) {
+                if quitting {
+                    continue;
+                }
+                let Some(col) = app.board.columns.get(app.col) else {
+                    app.banner = Some("Create failed: no column selected".to_string());
+                    continue;
+                };
+                let card_id = match provider.create_card(&col.id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        app.banner = Some(format!("Create failed: {e}"));
                         continue;
                     }
-                    if matches!(k.code, KeyCode::Char('e')) {
-                        if quitting {
-                            continue;
+                };
+                if let Err(msg) = edit_card_in_editor(
+                    terminal,
+                    provider.as_mut(),
+                    &mut app,
+                    card_id,
+                    "Create failed",
+                ) {
+                    app.banner = Some(msg);
+                }
+                continue;
+            }
+            if matches!(k.code, KeyCode::Char('e')) {
+                if quitting {
+                    continue;
+                }
+                let Some(card_id) = selected_card_id(&app) else {
+                    app.banner = Some("Edit failed: no card selected".to_string());
+                    continue;
+                };
+                if let Err(msg) = edit_card_in_editor(
+                    terminal,
+                    provider.as_mut(),
+                    &mut app,
+                    card_id,
+                    "Edit failed",
+                ) {
+                    app.banner = Some(msg);
+                }
+                continue;
+            }
+
+            if let Some(a) = action_from_key(k.code) {
+                if quitting && matches!(a, Action::MoveLeft | Action::MoveRight) {
+                    continue;
+                }
+
+                match a {
+                    Action::MoveLeft | Action::MoveRight => {
+                        let dir = if a == Action::MoveLeft { -1 } else { 1 };
+                        if async_moves {
+                            move_async(&mut app, &mut move_rx, &mut move_queue, dir);
+                        } else {
+                            move_sync(provider.as_mut(), &mut app, dir);
                         }
-                        let Some(card_id) = selected_card_id(&app) else {
-                            app.banner = Some("Edit failed: no card selected".to_string());
-                            continue;
-                        };
-                        if let Err(msg) = edit_card_in_editor(
-                            terminal,
-                            provider.as_mut(),
-                            &mut app,
-                            card_id,
-                            "Edit failed",
-                        ) {
-                            app.banner = Some(msg);
-                        }
-                        continue;
                     }
-
-                    if let Some(a) = action_from_key(k.code) {
+                    Action::Refresh => {
                         if quitting {
-                            if matches!(a, Action::MoveLeft | Action::MoveRight) {
-                                continue;
-                            }
+                            continue;
                         }
-
-                        match a {
-                            Action::MoveLeft | Action::MoveRight => {
-                                let dir = if a == Action::MoveLeft { -1 } else { 1 };
-                                if async_moves {
-                                    move_async(&mut app, &mut move_rx, &mut move_queue, dir);
-                                } else {
-                                    move_sync(provider.as_mut(), &mut app, dir);
-                                }
+                        match provider.load_board() {
+                            Ok(b) => {
+                                app.board = b;
+                                app.focus_first_non_empty();
+                                app.banner = None;
                             }
-                            Action::Refresh => {
-                                if quitting {
-                                    continue;
-                                }
-                                match provider.load_board() {
-                                    Ok(b) => {
-                                        app.board = b;
-                                        app.focus_first_non_empty();
-                                        app.banner = None;
-                                    }
-                                    Err(e) => app.banner = Some(format!("Refresh failed: {e}")),
-                                }
-                            }
-                            _ => {
-                                if app.apply(a) {
-                                    if move_rx.is_some() || !move_queue.is_empty() {
-                                        quitting = true;
-                                        update_quit_banner(
-                                            &mut app,
-                                            quitting,
-                                            &move_queue,
-                                            move_rx.is_some(),
-                                        );
-                                    } else {
-                                        break;
-                                    }
-                                }
+                            Err(e) => app.banner = Some(format!("Refresh failed: {e}")),
+                        }
+                    }
+                    _ => {
+                        if app.apply(a) {
+                            if move_rx.is_some() || !move_queue.is_empty() {
+                                quitting = true;
+                                update_quit_banner(
+                                    &mut app,
+                                    quitting,
+                                    &move_queue,
+                                    move_rx.is_some(),
+                                );
+                            } else {
+                                break;
                             }
                         }
                     }
@@ -463,14 +458,15 @@ fn render(f: &mut Frame, app: &App) {
         let area = centered(70, 45, f.area());
         f.render_widget(Clear, area);
 
-        let mut lines = Vec::new();
-        lines.push(Line::from(Span::styled(
-            &card.id,
-            Style::default().add_modifier(Modifier::BOLD),
-        )));
-        lines.push(Line::from(""));
-        lines.push(Line::from(card.title.clone()));
-        lines.push(Line::from(""));
+        let mut lines = vec![
+            Line::from(Span::styled(
+                &card.id,
+                Style::default().add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(card.title.clone()),
+            Line::from(""),
+        ];
 
         if card.description.trim().is_empty() {
             lines.push(Line::from(Span::styled(
