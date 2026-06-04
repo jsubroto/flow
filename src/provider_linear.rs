@@ -16,7 +16,11 @@ query Board($teamKey: String!) {
     nodes { id name type position }
   }
   issues(
-    filter: { team: { key: { eq: $teamKey } }, assignee: { isMe: { eq: true } } }
+    filter: {
+      team: { key: { eq: $teamKey } }
+      assignee: { isMe: { eq: true } }
+      cycle: { isActive: { eq: true } }
+    }
     first: 250
   ) {
     nodes { identifier title description state { id } }
