@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap, io, path::PathBuf};
+use std::{cmp::Ordering, collections::HashMap};
 
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -68,11 +68,7 @@ impl LinearProvider {
     }
 
     fn map_err(&self, op: &str, err: impl ToString) -> ProviderError {
-        ProviderError::Io {
-            op: op.to_string(),
-            path: PathBuf::from(ENDPOINT),
-            source: io::Error::other(err.to_string()),
-        }
+        provider::io_err(op, ENDPOINT, err)
     }
 
     fn graphql<T: DeserializeOwned>(
@@ -88,12 +84,7 @@ impl LinearProvider {
             .json(&GraphQlRequest { query, variables })
             .send()
             .map_err(|e| self.map_err(op, e))?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().unwrap_or_default();
-            return Err(self.map_err(op, format!("status {status}: {body}")));
-        }
+        let resp = provider::ensure_success(resp, op, ENDPOINT)?;
 
         let envelope: GraphQlResponse<T> = resp.json().map_err(|e| self.map_err(op, e))?;
 
@@ -116,11 +107,7 @@ impl LinearProvider {
 
 impl Provider for LinearProvider {
     fn load_board(&mut self) -> Result<Board, ProviderError> {
-        if let Some(msg) = &self.err {
-            return Err(ProviderError::Parse {
-                msg: format!("linear misconfigured: {msg}"),
-            });
-        }
+        provider::config_check(&self.err, "linear")?;
 
         let data: BoardData = self.graphql(
             "linear_board",
@@ -136,11 +123,7 @@ impl Provider for LinearProvider {
     }
 
     fn move_card(&mut self, card_id: &str, to_col_id: &str) -> Result<(), ProviderError> {
-        if let Some(msg) = &self.err {
-            return Err(ProviderError::Parse {
-                msg: format!("linear misconfigured: {msg}"),
-            });
-        }
+        provider::config_check(&self.err, "linear")?;
 
         let data: MoveData = self.graphql(
             "linear_move",

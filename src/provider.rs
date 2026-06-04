@@ -1,5 +1,7 @@
 use std::{fmt, io, path::PathBuf};
 
+use reqwest::blocking::Response;
+
 use crate::model::Board;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,6 +75,32 @@ pub fn required(missing: &mut Vec<&'static str>, v: Option<String>, name: &'stat
         missing.push(name);
         String::new()
     })
+}
+
+pub fn config_check(err: &Option<String>, provider: &str) -> Result<(), ProviderError> {
+    match err {
+        Some(msg) => Err(ProviderError::Parse {
+            msg: format!("{provider} misconfigured: {msg}"),
+        }),
+        None => Ok(()),
+    }
+}
+
+pub fn io_err(op: &str, path: &str, err: impl ToString) -> ProviderError {
+    ProviderError::Io {
+        op: op.to_string(),
+        path: PathBuf::from(path),
+        source: io::Error::other(err.to_string()),
+    }
+}
+
+pub fn ensure_success(resp: Response, op: &str, path: &str) -> Result<Response, ProviderError> {
+    if resp.status().is_success() {
+        return Ok(resp);
+    }
+    let status = resp.status();
+    let body = resp.text().unwrap_or_default();
+    Err(io_err(op, path, format!("status {status}: {body}")))
 }
 
 pub fn from_env() -> Box<dyn Provider> {

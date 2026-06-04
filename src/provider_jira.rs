@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io, path::PathBuf};
+use std::collections::HashMap;
 
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -55,11 +55,7 @@ impl JiraProvider {
     }
 
     fn map_err(&self, op: &str, err: impl ToString) -> ProviderError {
-        ProviderError::Io {
-            op: op.to_string(),
-            path: PathBuf::from(&self.base_url),
-            source: io::Error::other(err.to_string()),
-        }
+        provider::io_err(op, &self.base_url, err)
     }
 
     fn transitions(&self, issue_key: &str) -> Result<Vec<Transition>, ProviderError> {
@@ -70,12 +66,7 @@ impl JiraProvider {
             .basic_auth(&self.email, Some(&self.api_token))
             .send()
             .map_err(|e| self.map_err("jira_transitions", e))?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().unwrap_or_default();
-            return Err(self.map_err("jira_transitions", format!("status {status}: {body}")));
-        }
+        let resp = provider::ensure_success(resp, "jira_transitions", &self.base_url)?;
 
         let data: TransitionsResponse = resp
             .json()
@@ -94,12 +85,7 @@ impl JiraProvider {
             .basic_auth(&self.email, Some(&self.api_token))
             .send()
             .map_err(|e| self.map_err("jira_board_config", e))?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().unwrap_or_default();
-            return Err(self.map_err("jira_board_config", format!("status {status}: {body}")));
-        }
+        let resp = provider::ensure_success(resp, "jira_board_config", &self.base_url)?;
 
         let body = resp
             .text()
@@ -113,11 +99,7 @@ impl JiraProvider {
 
 impl Provider for JiraProvider {
     fn load_board(&mut self) -> Result<Board, ProviderError> {
-        if let Some(msg) = &self.err {
-            return Err(ProviderError::Parse {
-                msg: format!("jira misconfigured: {msg}"),
-            });
-        }
+        provider::config_check(&self.err, "jira")?;
 
         let cfg = self.board_config(&self.board_id)?;
         let map = board_config_map(&cfg);
@@ -146,12 +128,7 @@ impl Provider for JiraProvider {
             })
             .send()
             .map_err(|e| self.map_err("jira_search", e))?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().unwrap_or_default();
-            return Err(self.map_err("jira_search", format!("status {status}: {body}")));
-        }
+        let resp = provider::ensure_success(resp, "jira_search", &self.base_url)?;
 
         let data: SearchResponse = resp.json().map_err(|e| self.map_err("jira_search", e))?;
 
@@ -208,11 +185,7 @@ impl Provider for JiraProvider {
     }
 
     fn move_card(&mut self, card_id: &str, to_col_id: &str) -> Result<(), ProviderError> {
-        if let Some(msg) = &self.err {
-            return Err(ProviderError::Parse {
-                msg: format!("jira misconfigured: {msg}"),
-            });
-        }
+        provider::config_check(&self.err, "jira")?;
 
         let transitions = self.transitions(card_id)?;
         let cfg = self.board_config(&self.board_id)?;
@@ -243,12 +216,7 @@ impl Provider for JiraProvider {
             })
             .send()
             .map_err(|e| self.map_err("jira_transition", e))?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().unwrap_or_default();
-            return Err(self.map_err("jira_transition", format!("status {status}: {body}")));
-        }
+        provider::ensure_success(resp, "jira_transition", &self.base_url)?;
 
         Ok(())
     }
