@@ -78,6 +78,7 @@ pub fn required(missing: &mut Vec<&'static str>, v: Option<String>, name: &'stat
 pub fn from_env() -> Box<dyn Provider> {
     match std::env::var("FLOW_PROVIDER").ok().as_deref() {
         Some("jira") => Box::new(crate::provider_jira::JiraProvider::from_env()),
+        Some("linear") => Box::new(crate::provider_linear::LinearProvider::from_env()),
         _ => Box::new(crate::provider_local::LocalProvider::from_env()),
     }
 }

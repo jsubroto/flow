@@ -67,6 +67,27 @@ The board ID is required. It determines the column order and the board's filter.
 
 Flow will only show issues assigned to the current user in open sprints.
 
+## Linear mode
+To load issues from Linear, set:
+
+```bash
+FLOW_PROVIDER=linear
+LINEAR_API_KEY=your_key
+LINEAR_TEAM_KEY=ENG
+```
+
+The team key is required. It determines which team's statuses (columns) and issues to load.
+
+By default every status is shown as a column. To show only specific statuses, in a specific order, set `LINEAR_STATUSES` to a comma-separated list of status names:
+
+```bash
+LINEAR_STATUSES="Todo,In Progress,In Review,Done"
+```
+
+Names match your team's Linear status names (case-insensitive). Statuses not listed are hidden, and moves stay within the listed statuses.
+
+Flow will only show issues assigned to the current user.
+
 
 ## Board format
 Boards are plain files:

@@ -26,6 +26,7 @@ mod app;
 mod model;
 mod provider;
 mod provider_jira;
+mod provider_linear;
 mod provider_local;
 mod store_fs;
 
