@@ -60,13 +60,10 @@ FLOW_PROVIDER=jira
 JIRA_BASE_URL=https://your-site.atlassian.net
 JIRA_EMAIL=you@example.com
 JIRA_API_TOKEN=your_token
-```
-
-Set board ID to load column order from Jira and infer the board's filter:
-
-```bash
 JIRA_BOARD_ID=123
 ```
+
+The board ID is required. It determines the column order and the board's filter.
 
 Flow will only show issues assigned to the current user in open sprints.
 

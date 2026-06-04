@@ -64,6 +64,17 @@ pub trait Provider {
     }
 }
 
+pub fn normalize(v: Option<String>) -> Option<String> {
+    v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+pub fn required(missing: &mut Vec<&'static str>, v: Option<String>, name: &'static str) -> String {
+    normalize(v).unwrap_or_else(|| {
+        missing.push(name);
+        String::new()
+    })
+}
+
 pub fn from_env() -> Box<dyn Provider> {
     match std::env::var("FLOW_PROVIDER").ok().as_deref() {
         Some("jira") => Box::new(crate::provider_jira::JiraProvider::from_env()),

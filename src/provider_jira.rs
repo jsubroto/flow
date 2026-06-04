@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     model::{Board, Card, Column},
-    provider::{Provider, ProviderError},
+    provider::{self, Provider, ProviderError},
 };
 
 pub struct JiraProvider {
@@ -13,7 +13,7 @@ pub struct JiraProvider {
     base_url: String,
     email: String,
     api_token: String,
-    board_id: Option<String>,
+    board_id: String,
     err: Option<String>,
 }
 
@@ -35,47 +35,14 @@ impl JiraProvider {
     ) -> Self {
         let mut missing = Vec::new();
 
-        let base_url = match base_url {
-            Some(v) if !v.trim().is_empty() => v.trim_end_matches('/').to_string(),
-            _ => {
-                missing.push("JIRA_BASE_URL");
-                String::new()
-            }
-        };
+        let base_url = provider::required(&mut missing, base_url, "JIRA_BASE_URL")
+            .trim_end_matches('/')
+            .to_string();
+        let email = provider::required(&mut missing, email, "JIRA_EMAIL");
+        let api_token = provider::required(&mut missing, api_token, "JIRA_API_TOKEN");
+        let board_id = provider::required(&mut missing, board_id, "JIRA_BOARD_ID");
 
-        let email = match email {
-            Some(v) if !v.trim().is_empty() => v,
-            _ => {
-                missing.push("JIRA_EMAIL");
-                String::new()
-            }
-        };
-
-        let api_token = match api_token {
-            Some(v) if !v.trim().is_empty() => v,
-            _ => {
-                missing.push("JIRA_API_TOKEN");
-                String::new()
-            }
-        };
-
-        let board_id = board_id.and_then(|v| {
-            let trimmed = v.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        });
-        if board_id.is_none() {
-            missing.push("JIRA_BOARD_ID");
-        }
-
-        let err = if missing.is_empty() {
-            None
-        } else {
-            Some(format!("missing {}", missing.join(", ")))
-        };
+        let err = (!missing.is_empty()).then(|| format!("missing {}", missing.join(", ")));
 
         Self {
             client: Client::new(),
@@ -152,21 +119,11 @@ impl Provider for JiraProvider {
             });
         }
 
-        let board_id = self
-            .board_id
-            .as_deref()
-            .ok_or_else(|| ProviderError::Parse {
-                msg: "jira misconfigured: missing JIRA_BOARD_ID".to_string(),
-            })?;
-        let cfg = self.board_config(board_id)?;
-        let config_map = Some(board_config_map(&cfg));
+        let cfg = self.board_config(&self.board_id)?;
+        let map = board_config_map(&cfg);
         let mut status_to_column = HashMap::new();
-        if let Some(map) = &config_map {
-            for (column, status_ids) in &map.column_to_status {
-                for id in status_ids {
-                    status_to_column.insert(id.clone(), column.clone());
-                }
-            }
+        for (column, status_ids) in &map.column_to_status {
+            status_to_column.extend(status_ids.iter().map(|id| (id.clone(), column.clone())));
         }
         let jql = format!(
             "filter={} AND assignee = currentUser() AND sprint in openSprints()",
@@ -225,11 +182,9 @@ impl Provider for JiraProvider {
         }
 
         let mut col_order = Vec::new();
-        if let Some(map) = config_map {
-            for name in map.order {
-                if !col_order.iter().any(|s: &String| s == &name) {
-                    col_order.push(name);
-                }
+        for name in map.order {
+            if !col_order.iter().any(|s: &String| s == &name) {
+                col_order.push(name);
             }
         }
 
@@ -260,15 +215,13 @@ impl Provider for JiraProvider {
         }
 
         let transitions = self.transitions(card_id)?;
+        let cfg = self.board_config(&self.board_id)?;
+        let map = board_config_map(&cfg);
         let mut transition_id = None;
-        if let Some(board_id) = &self.board_id {
-            let cfg = self.board_config(board_id)?;
-            let map = board_config_map(&cfg);
-            if let Some(status_ids) = map.column_to_status.get(to_col_id)
-                && let Some(t) = pick_transition_for_column(&transitions, to_col_id, status_ids)
-            {
-                transition_id = Some(t.id.clone());
-            }
+        if let Some(status_ids) = map.column_to_status.get(to_col_id)
+            && let Some(t) = pick_transition_for_column(&transitions, to_col_id, status_ids)
+        {
+            transition_id = Some(t.id.clone());
         }
         let transition_id = if let Some(id) = transition_id {
             id
@@ -425,17 +378,15 @@ fn pick_transition_for_column<'a>(
     };
 
     let mut first_match = None;
-    for t in transitions {
-        if !status_ids.iter().any(|id| id == &t.to.id) {
-            continue;
-        }
+    for t in transitions
+        .iter()
+        .filter(|t| status_ids.iter().any(|id| id == &t.to.id))
+    {
         let name = t.to.name.to_lowercase();
         if !prefs.is_empty() && prefs.iter().any(|p| name.contains(p)) {
             return Some(t);
         }
-        if first_match.is_none() {
-            first_match = Some(t);
-        }
+        first_match = first_match.or(Some(t));
     }
 
     first_match
@@ -487,6 +438,11 @@ fn collect_rich_text(node: &serde_json::Value, out: &mut String, state: &mut Ric
     use serde_json::Value;
 
     match node {
+        Value::Array(arr) => {
+            for child in arr {
+                collect_rich_text(child, out, state);
+            }
+        }
         Value::Object(map) => {
             let ty = map.get("type").and_then(Value::as_str);
 
@@ -494,30 +450,27 @@ fn collect_rich_text(node: &serde_json::Value, out: &mut String, state: &mut Ric
                 state.push_text(out, text);
             }
 
-            if ty == Some("hardBreak") {
-                state.push_newline(out);
-            }
-
-            if ty == Some("inlineCard")
-                && let Some(url) = map
-                    .get("attrs")
-                    .and_then(Value::as_object)
-                    .and_then(|attrs| attrs.get("url"))
-                    .and_then(Value::as_str)
-            {
-                state.push_text(out, url);
-            }
-
-            if ty == Some("listItem") {
-                if state.at_line_start {
-                    state.push_text(out, "- ");
-                } else {
-                    state.push_newline(out);
+            match ty {
+                Some("hardBreak") => state.push_newline(out),
+                Some("inlineCard") => {
+                    if let Some(url) = map
+                        .get("attrs")
+                        .and_then(|attrs| attrs.get("url"))
+                        .and_then(Value::as_str)
+                    {
+                        state.push_text(out, url);
+                    }
+                }
+                Some("listItem") => {
+                    if !state.at_line_start {
+                        state.push_newline(out);
+                    }
                     state.push_text(out, "- ");
                 }
+                _ => {}
             }
 
-            if let Some(Value::Array(content)) = map.get("content") {
+            if let Some(content) = map.get("content").and_then(Value::as_array) {
                 for child in content {
                     collect_rich_text(child, out, state);
                 }
@@ -525,11 +478,6 @@ fn collect_rich_text(node: &serde_json::Value, out: &mut String, state: &mut Ric
 
             if matches!(ty, Some("paragraph") | Some("listItem")) {
                 state.push_newline(out);
-            }
-        }
-        Value::Array(arr) => {
-            for child in arr {
-                collect_rich_text(child, out, state);
             }
         }
         _ => {}
