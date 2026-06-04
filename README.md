@@ -86,7 +86,7 @@ LINEAR_STATUSES="Todo,In Progress,In Review,Done"
 
 Names match your team's Linear status names (case-insensitive). Statuses not listed are hidden, and moves stay within the listed statuses.
 
-Flow will only show issues assigned to the current user.
+Flow will only show issues assigned to the current user in the active cycle.
 
 
 ## Board format
