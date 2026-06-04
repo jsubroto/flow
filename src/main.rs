@@ -202,7 +202,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                 match a {
                     Action::MoveLeft | Action::MoveRight => {
                         let dir = if a == Action::MoveLeft { -1 } else { 1 };
-                        if matches!(provider.move_mode(), provider::MoveMode::Async) {
+                        if provider.move_mode() == provider::MoveMode::Async {
                             move_async(&mut app, &mut move_rx, &mut move_queue, dir);
                         } else {
                             move_sync(provider.as_mut(), &mut app, dir);
