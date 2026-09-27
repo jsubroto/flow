@@ -128,8 +128,44 @@ This format is:
 
 ## Run
 
+### Cargo
 ```bash
 cargo run
+```
+
+### Nix
+
+Temporarily build and run via nix flakes
+```sh
+nix run github:jsubroto/flow
+```
+
+Install via nix flakes
+
+flake.nix
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flow = { 
+      url = "github:jsubtoto/flow";
+    };
+  };
+}
+```
+
+configuration.nix
+```nix
+environment.systemPackages = with pkgs; [
+  inputs.flow."${pkgs.stdenv.hostPlatform.system}".default
+]
+```
+
+home.nix
+```nix
+home.packages = with pkgs; [
+  inputs.flow."${pkgs.stdenv.hostPlatform.system}".default
+]
 ```
 
 ## Status
